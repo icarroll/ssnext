@@ -174,14 +174,16 @@
         `#(,new-todos ,new-targets)]
        [_ (raise-user-error (format "can't evaluate ~A" eval-item))])]
     [`#s(evaluate-args ,env ,args-item)
+     (unless (list? args-item)
+       (raise-user-error (format "bad args ~A" args-item)))
      (define op (gvector-ref target 0))
      (cond [(special? op)
             (gvector-set! target 0 (special-item op))
-            (for-each #{gvector-add! target %} args-item) ; TODO: check for list
+            (for-each #{gvector-add! target %} args-item)
             (define new-todos `(#s(invoke ,env) ,@todos-rest))
             `#(,new-todos ,targets)]
            [(rewriter? op)
-            (for-each #{gvector-add! target %} args-item) ; TODO: check for list
+            (for-each #{gvector-add! target %} args-item)
             (define new-todos `(#s(invoke ,env) ,@todos-rest))
             `#(,new-todos ,targets)]
            [else
