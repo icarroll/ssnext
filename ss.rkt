@@ -53,6 +53,8 @@
 
 (require 'structures)
 
+(define debug (make-parameter #f))
+
 (define PATH (build-path (current-directory) "ss-save.txt"))
 
 (define (start)
@@ -64,6 +66,10 @@
 
 (define (start-blank)
   (main (make-start-env)))
+
+(define (start-debug)
+  (parameterize ([debug #t])
+    (start)))
 
 (define (main global-env)
   (let/ec quit
@@ -96,7 +102,7 @@
 (define (evaluate env command)
   (define todos (list `#s(evaluate ,env ,command)))
   (define targets (list (make-gvector)))
-  ;(pretty-columns todos targets)
+  (when (debug) (pretty-columns todos targets))
   (match (evaluate-completely todos targets)
     [(list result-vec)
      (case (gvector-count result-vec)
@@ -109,18 +115,18 @@
 
 (define (evaluate-completely todos targets)
   (match-define `#(,new-todos ,new-targets) (evaluate-step todos targets))
-  ;(pretty-columns new-todos new-targets)
+  (when (debug) (pretty-columns new-todos new-targets))
   (if (null? new-todos)
       new-targets
       (evaluate-completely new-todos new-targets)))
 
 (define (pretty-columns . items)
-    (let* [(converted-items (map convert-gvectors items))
-           (pretty-items (map #{pretty-format % 40 #:mode 'display}
-                              converted-items))
-           (pretty-lineses (map #{string-split % "\n"} pretty-items))]
-      (displayln (string-join (paste pretty-lineses) "\n"))
-      (newline)))
+  (let* [(converted-items (map convert-gvectors items))
+         (pretty-items (map #{pretty-format % 40 #:mode 'display}
+                            converted-items))
+         (pretty-lineses (map #{string-split % "\n"} pretty-items))]
+    (displayln (string-join (paste pretty-lineses) "\n"))
+    (newline)))
 
 (define/match (paste _)
   [(`(,this-lines ,that-lines . ,other-columns))
