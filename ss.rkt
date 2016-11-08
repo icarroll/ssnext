@@ -338,3 +338,8 @@
                   `(del . ,(special #s(eval-ext evaluate-del)))
                   `(sub . ,(special #s(eval-ext evaluate-sub)))
                   `(rewrite . ,(special #s(eval-ext evaluate-rewrite)))]))
+
+(define prelude
+  '("(new def (rewrite (name args . body) `(new ,name (sub ,args . body))))"
+    ""
+    ""))
