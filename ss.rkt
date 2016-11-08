@@ -196,6 +196,8 @@
     [`#s(evaluate-target ,env)
      (define todo-item `#s(evaluate ,env ,(gvector-ref target 0)))
      `#(,(cons todo-item todos-rest) ,targets-rest)]
+    [`#s(discard)
+     `#(,todos-rest ,targets-rest)]
     [_ (raise-user-error (format "can't evaluate ~A" todo))]))
 
 (define (evaluate-invoke dyn-env form todos targets)
@@ -212,27 +214,49 @@
     [`#s(eval-ext ,name) ((eval name) dyn-env args todos targets)]
     [(? subprogram? s) (define stat-env (subprogram-static-parent-env s))
                        (define formals (subprogram-formals s))
-                       (unless (= (length formals) (length args))
-                         (raise-user-error (format "bad args ~A" args)))
-                       (define bindings (map cons formals args))
+                       (define bindings (make-bindings formals args))
                        (define new-env (make-env stat-env bindings))
                        (define body (subprogram-body s))
-                       (define body-todo `#s(evaluate ,new-env ,body))
-                       (define new-todos (list* body-todo todos))
+                       (define body-todos
+                         (map (λ (item) `#s(evaluate ,new-env ,item)) body))
+                       (define body-disc-todos
+                         (add-between body-todos #s(discard)))
+                       (define new-todos `(,@body-disc-todos ,@todos))
                        `#(,new-todos ,targets)]
     [(? rewriter? r) (define stat-env (rewriter-definition-site-env r))
                      (define formals (rewriter-formals r))
-                     (unless (= (length formals) (length args))
-                       (raise-user-error (format "bad args ~A" args)))
-                     (define bindings (map cons formals args))
+                     (define bindings (make-bindings formals args))
                      (define new-env (make-env stat-env bindings))
                      (define body (rewriter-body r))
-                     (define body-todo `#s(evaluate ,new-env ,body))
+                     (define body-todos
+                       (map (λ (item) `#s(evaluate ,new-env ,item)) body))
+                     (define body-disc-todos
+                       (add-between body-todos #s(discard)))
                      (define eval-todo `#s(evaluate-target ,dyn-env))
-                     (define new-todos (list* body-todo eval-todo todos))
+                     (define new-todos `(,@body-disc-todos ,eval-todo ,@todos))
                      (define new-targets (cons (make-gvector) targets))
                      `#(,new-todos ,new-targets)]
     [_ (raise-user-error (format "can't invoke ~A" sub))]))
+
+(define/match (make-bindings formals actuals)
+  [('() '()) '()]
+  [(`(,formal . ,formals-rest) `(,actual . ,actuals-rest))
+   `((,formal . ,actual) . ,(make-bindings formals-rest actuals-rest))]
+  [((? symbol? formal) _) `((,formal . ,actuals))]
+  [(_ _) (raise-user-error (format "bad binding ~A ~A" formals actuals))]
+  )
+
+(module+ test (require rackunit)
+  (check-equal? (make-bindings '() '()) '())
+  (check-equal? (make-bindings '(x) '(17)) '((x . 17)))
+  (check-equal? (make-bindings '(x y) '(17 47)) '((x . 17) (y . 47)))
+  (check-equal? (make-bindings 'x '(17 47)) '((x . (17 47))))
+  (check-equal? (make-bindings '(x . y) '(17 47)) '((x . 17) (y . (47))))
+  (check-equal? (make-bindings 'x '()) '((x . ())))
+  (check-exn exn:fail:user? (thunk (make-bindings #f '(17))))
+  (check-exn exn:fail:user? (thunk (make-bindings '(x) '())))
+  (check-exn exn:fail:user? (thunk (make-bindings '(x) '(17 47))))
+  )
 
 (define (evaluate-quote env args todos targets)
   (match args
@@ -278,20 +302,16 @@
 
 (define (evaluate-sub env sub-form todos targets)
   (match sub-form
-    [(list-rest (list (? symbol? args) ...) body)
-     (unless {(length body) = 1}
-       (raise-user-error (format "bad sub body ~A" body)))
-     (define sub-value (subprogram env args (first body)))
+    [(list-rest formals body)
+     (define sub-value (subprogram env formals body))
      (gvector-add! (first targets) sub-value)
      `#(,todos ,targets)]
     [_ (raise-user-error (format "bad sub ~A" sub-form))]))
 
 (define (evaluate-rewrite env rew-form todos targets)
   (match rew-form
-    [(list-rest (list (? symbol? args) ...) body)
-     (unless {(length body) = 1}
-       (raise-user-error (format "bad rewrite body ~A" body)))
-     (define rew-value (rewriter env args (first body)))
+    [(list-rest formals body)
+     (define rew-value (rewriter env formals body))
      (gvector-add! (first targets) rew-value)
      `#(,todos ,targets)]
     [_ (raise-user-error (format "bad rewrite ~A" rew-form))]))
